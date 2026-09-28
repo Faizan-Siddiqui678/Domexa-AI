@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "32829623603",
+    "project_id": "domexa-9d154",
+    "storage_bucket": "domexa-9d154.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:32829623603:android:fce2f968754724105fc246",
+        "android_client_info": {
+          "package_name": "com.example.domexa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_dxwlfiASuqOutzThVlAPjVTGGmvX2sY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
