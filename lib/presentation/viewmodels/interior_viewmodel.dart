@@ -1,5 +1,5 @@
 // lib/presentation/viewmodels/interior_viewmodel.dart
-// Updated: now calls real backend instead of building data locally
+// v4 — passes budget and city to backend, handles full Gemini response
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -8,35 +8,34 @@ import '../../core/constants/api_constants.dart';
 import '../../data/models/interior_design_model.dart';
 
 class InteriorViewModel extends ChangeNotifier {
-  bool _isLoading = false;
-  String? _errorMessage;
-  InteriorDesignModel? _interiorDesign;
-  int _selectedThemeIndex = 0;
+  bool                _isLoading    = false;
+  String?             _errorMessage;
+  InteriorDesignModel? _design;
+  int                 _selTheme     = 0;
 
-  bool get isLoading           => _isLoading;
-  String? get errorMessage     => _errorMessage;
-  InteriorDesignModel? get interiorDesign => _interiorDesign;
-  int get selectedThemeIndex   => _selectedThemeIndex;
+  bool                get isLoading     => _isLoading;
+  String?             get errorMessage  => _errorMessage;
+  InteriorDesignModel? get design       => _design;
+  int                 get selTheme      => _selTheme;
 
-  void setSelectedTheme(int index) {
-    _selectedThemeIndex = index;
-    notifyListeners();
-  }
+  void setTheme(int i) { _selTheme = i; notifyListeners(); }
 
-  /// Called by interior_screen.dart — now hits real backend
   Future<void> fetchInteriorDesign({
     required String roomType,
     required double roomSize,
     String stylePreference = 'modern',
-    bool generateImage = true,   // pass false to skip DALL-E (instant response)
+    String budget          = 'standard',
+    String city            = 'lahore',
+    bool   generateImage   = true,
   }) async {
-    _isLoading = true;
+    _isLoading    = true;
     _errorMessage = null;
-    _selectedThemeIndex = 0;
+    _selTheme     = 0;
     notifyListeners();
 
     try {
-      final url = Uri.parse('${ApiConstants.baseUrl}/api/interior-design');
+      final url = Uri.parse(
+          '${ApiConstants.baseUrl}${ApiConstants.interiorDesign}');
 
       final response = await http.post(
         url,
@@ -45,56 +44,47 @@ class InteriorViewModel extends ChangeNotifier {
           'room_type':        roomType,
           'room_size':        roomSize,
           'style_preference': stylePreference,
+          'budget':           budget,
+          'city':             city,
           'generate_image':   generateImage,
         }),
       ).timeout(
-        // DALL-E can take up to 30s — increase timeout
-        const Duration(seconds: 60),
-        onTimeout: () => throw Exception('Request timed out. Try again.'),
+        const Duration(seconds: 120),
+        onTimeout: () => throw Exception(
+            'Request timed out. Hugging Face may be cold-starting. Try again.'),
       );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
-        _interiorDesign = InteriorDesignModel.fromJson(json);
-        _isLoading = false;
-        notifyListeners();
+        if (json['success'] == true) {
+          _design = InteriorDesignModel.fromJson(json);
+        } else {
+          throw Exception(json['error'] ?? 'Unknown error from server');
+        }
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
     } catch (e) {
-      _isLoading = false;
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }
 
-  List<String> get roomOptions => [
-    'bedroom',
-    'living_room',
-    'drawing_room',
-    'kitchen',
-    'bathroom',
-    'dining_room',
+  // Options for UI dropdowns
+  static const roomOptions = [
+    'bedroom', 'living_room', 'kitchen', 'bathroom',
+    'drawing_room', 'dining_room',
   ];
-
-  List<String> get roomLabels => [
-    'Bedroom',
-    'Living Room',
-    'Drawing Room',
-    'Kitchen',
-    'Bathroom',
-    'Dining Room',
+  static const roomLabels = [
+    'Bedroom', 'Living Room', 'Kitchen', 'Bathroom',
+    'Drawing Room', 'Dining Room',
   ];
-
-  List<String> get styleOptions => [
-    'modern',
-    'traditional',
-    'minimalist',
-    'luxury',
-  ];
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
+  static const styleOptions  = ['modern', 'traditional', 'minimalist', 'luxury'];
+  static const styleLabels   = ['Modern', 'Traditional', 'Minimalist', 'Luxury'];
+  static const budgetOptions  = ['economy', 'standard', 'luxury'];
+  static const budgetLabels   = ['Economy', 'Standard', 'Luxury'];
+  static const cityOptions    = ['lahore', 'karachi', 'islamabad', 'rawalpindi', 'faisalabad'];
+  static const cityLabels     = ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad'];
 }
