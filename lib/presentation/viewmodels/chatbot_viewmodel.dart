@@ -1,74 +1,55 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../data/models/chat_message_model.dart';
 import '../../data/services/api_service.dart';
 
 class ChatbotViewModel extends ChangeNotifier {
-  final ApiService _apiService;
-  ChatbotViewModel({ApiService? apiService})
-      : _apiService = apiService ?? ApiService();
+  ChatbotViewModel(this._api);
+  final ApiService _api;
 
-  final List<ChatMessage> _messages = [];
-  bool    _isTyping     = false;
-  String? _errorMessage;
-  String  _city         = 'lahore';
-
-  List<ChatMessage> get messages    => List.unmodifiable(_messages);
-  bool    get isTyping              => _isTyping;
-  String? get errorMessage          => _errorMessage;
-  bool    get hasMessages           => _messages.isNotEmpty;
-  String  get city                  => _city;
-
-  void setCity(String v) { _city = v.toLowerCase(); notifyListeners(); }
-
-  Future<void> sendMessage(String userMessage) async {
-    if (userMessage.trim().isEmpty) return;
-    _messages.add(ChatMessage(role: 'user', content: userMessage.trim()));
-    _errorMessage = null;
-    _isTyping     = true;
-    notifyListeners();
-    try {
-      final response = await _apiService.sendChatMessage(
-        message:             userMessage,
-        conversationHistory: _messages.sublist(0, _messages.length - 1),
-        city:                _city,
-      );
-      _messages.add(ChatMessage(role: 'assistant', content: response));
-      _isTyping = false;
-      notifyListeners();
-    } catch (e) {
-      _isTyping     = false;
-      _errorMessage = e is ApiException ? e.message : e.toString();
-      _messages.add(ChatMessage(
-        role: 'assistant',
-        content: 'Sorry, I could not get a response right now.\n\n'
-            'Make sure the backend server is running on your PC '
-            'and your phone is on the same WiFi network.',
-      ));
-      notifyListeners();
-    }
-  }
-
-  void clearConversation() {
-    _messages.clear();
-    _errorMessage = null;
-    _isTyping     = false;
-    notifyListeners();
-  }
-
-  List<String> getSuggestedQuestions() => [
+  static const suggestions = [
     'How much does a 10 Marla house cost?',
-    'What is the best cement for foundation?',
-    'How to cast a roof slab?',
-    'Which direction should the kitchen face?',
-    'What is the standard room height in Pakistan?',
-    'How to waterproof a basement?',
-    'What steel grade should I use for columns?',
-    'What is the difference between OPC and PPC cement?',
+    'Which cement is best for foundations?',
+    'How much steel does a 2-storey house need?',
+    'How can I keep my house cooler in summer?',
   ];
 
-  @override
-  void dispose() {
-    _apiService.dispose();
-    super.dispose();
+  final List<ChatMessageModel> messages = [];
+  bool sending = false;
+  String? _lastUserText;
+
+  Future<void> send(String text, String city) async {
+    final t = text.trim();
+    if (t.isEmpty || sending) return;
+    _lastUserText = t;
+    // History = last 10 successful messages BEFORE this one (backend appends the new message itself).
+    final history = messages.where((m) => !m.isError).toList();
+    final trimmed = history.length > 10 ? history.sublist(history.length - 10) : history;
+    messages.add(ChatMessageModel(role: 'user', content: t));
+    sending = true;
+    notifyListeners();
+    try {
+      final reply = await _api.chat(message: t, history: trimmed, city: city);
+      messages.add(ChatMessageModel(role: 'assistant', content: reply));
+    } on ApiException catch (e) {
+      messages.add(ChatMessageModel(role: 'assistant', content: e.message, isError: true));
+    } catch (_) {
+      messages.add(ChatMessageModel(role: 'assistant', content: 'Something unexpected happened.', isError: true));
+    }
+    sending = false;
+    notifyListeners();
+  }
+
+  /// Re-asks the last question after a failure without retyping it.
+  Future<void> retry(String city) async {
+    if (_lastUserText == null || sending) return;
+    if (messages.isNotEmpty && messages.last.isError) messages.removeLast();
+    if (messages.isNotEmpty && messages.last.isUser) messages.removeLast();
+    await send(_lastUserText!, city);
+  }
+
+  void clear() {
+    messages.clear();
+    _lastUserText = null;
+    notifyListeners();
   }
 }

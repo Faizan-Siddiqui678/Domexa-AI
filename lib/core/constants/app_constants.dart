@@ -1,48 +1,82 @@
-/// App-wide Constants
-library;
+/// Limits mirror app/models/requests.py so invalid input is prevented
+/// on the device instead of failing on the server (HCI: error prevention).
+class PlotPreset {
+  final String label;
+  final double sqft;
+  const PlotPreset(this.label, this.sqft);
+}
 
 class AppConstants {
-  // App Info
-  static const String appName = 'Domexa';
-  static const String appTagline = 'AI-Powered House Construction Planning';
-  static const String version = '1.0.0';
+  static const double sqftPerMarla = 225; // same constant as cost_service._get_notes
+  static const double coverage = 0.70; // same coverage as cost/material services
 
-  // Validation Constants
-  static const double minPlotArea = 500;
-  static const double maxPlotArea = 20000;
-  static const int minFloors = 1;
-  static const int maxFloors = 4;
-  static const int maxBedrooms = 10;
-  static const int maxBathrooms = 8;
+  static const double minPlotArea = 500, maxPlotArea = 20000;
+  static const int minFloors = 1, maxFloors = 4;
+  static const int minBedrooms = 1, maxBedrooms = 10;
+  static const int minBathrooms = 1, maxBathrooms = 8;
+  static const int minKitchens = 1, maxKitchens = 2;
+  static const double minRoomSize = 50, maxRoomSize = 5000;
 
-  // Budget Categories
-  static const String budgetLow = 'low';
-  static const String budgetMedium = 'medium';
-  static const String budgetHigh = 'high';
+  static const List<PlotPreset> plotPresets = [
+    PlotPreset('5 Marla', 1125),
+    PlotPreset('8 Marla', 1800),
+    PlotPreset('10 Marla', 2250),
+    PlotPreset('1 Kanal', 4500),
+    PlotPreset('2 Kanal', 9000),
+  ];
 
-  // Room Types
-  static const String roomBedroom = 'bedroom';
-  static const String roomMasterBedroom = 'master_bedroom';
-  static const String roomLivingRoom = 'living_room';
-  static const String roomDrawingRoom = 'drawing_room';
-  static const String roomDiningRoom = 'dining_room';
-  static const String roomKitchen = 'kitchen';
-  static const String roomBathroom = 'bathroom';
-  static const String roomStudyRoom = 'study_room';
-  static const String roomTvLounge = 'tv_lounge';
-  static const String roomGuestRoom = 'guest_room';
-  static const String roomKidsRoom = 'kids_room';
+  static const List<String> cities = ['lahore', 'karachi', 'islamabad'];
+  static const List<String> interiorCities = ['lahore', 'karachi', 'islamabad', 'rawalpindi'];
+  static const List<String> styles = ['modern', 'traditional', 'minimalist', 'luxury'];
 
-  // Style Preferences
-  static const String styleModern = 'modern';
-  static const String styleTraditional = 'traditional';
-  static const String styleMinimalist = 'minimalist';
-  static const String styleLuxury = 'luxury';
+  /// Cost + materials budgets (backend maps these to low/medium/high).
+  static const List<String> budgetKeys = ['economy', 'standard', 'premium'];
+  static const Map<String, String> budgetLabels = {
+    'economy': 'Economy',
+    'standard': 'Standard',
+    'premium': 'Premium',
+  };
 
-  // Local Storage Keys
-  static const String keyUserToken = 'user_token';
-  static const String keyUserId = 'user_id';
-  static const String keyUserEmail = 'user_email';
-  static const String keyThemeMode = 'theme_mode';
-  static const String keyOnboardingCompleted = 'onboarding_completed';
+  /// Interior endpoint uses economy / standard / luxury.
+  static const List<String> interiorBudgetKeys = ['economy', 'standard', 'luxury'];
+
+  static const Map<String, String> roomTypes = {
+    'bedroom': 'Bedroom',
+    'living_room': 'Living Room',
+    'kitchen': 'Kitchen',
+    'bathroom': 'Bathroom',
+    'drawing_room': 'Drawing Room',
+    'dining_room': 'Dining Room',
+  };
+
+  /// Backend returns budget_range normalised to low/medium/high.
+  static String budgetKeyFromBackend(String v) {
+    switch (v.toLowerCase()) {
+      case 'low':
+      case 'economy':
+        return 'economy';
+      case 'high':
+      case 'premium':
+        return 'premium';
+      default:
+        return 'standard';
+    }
+  }
+
+  /// Layout room types -> interior endpoint room types.
+  static String? interiorTypeForRoom(String layoutType) {
+    switch (layoutType) {
+      case 'master_bedroom':
+      case 'bedroom':
+        return 'bedroom';
+      case 'living_room':
+      case 'kitchen':
+      case 'bathroom':
+      case 'drawing_room':
+      case 'dining_room':
+        return layoutType;
+      default:
+        return null;
+    }
+  }
 }

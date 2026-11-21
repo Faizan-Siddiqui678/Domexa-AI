@@ -1,96 +1,64 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'firebase_options.dart';
+import 'core/theme/app_theme.dart';
+import 'data/services/api_service.dart';
+import 'data/services/firebase_service.dart';
+import 'data/services/settings_service.dart';
+import 'firebase_options.dart'; // keep the file FlutterFire generated for your project
 import 'presentation/viewmodels/auth_viewmodel.dart';
-import 'presentation/viewmodels/plot_input_viewmodel.dart';
-import 'presentation/viewmodels/interior_viewmodel.dart';
+import 'presentation/viewmodels/chatbot_viewmodel.dart';
 import 'presentation/viewmodels/cost_viewmodel.dart';
 import 'presentation/viewmodels/export_viewmodel.dart';
-import 'presentation/viewmodels/chatbot_viewmodel.dart';
-import 'presentation/views/splash/splash_screen.dart';
-import 'presentation/views/home/home_screen.dart';
-import 'presentation/views/auth/login_screen.dart';
-import 'presentation/views/auth/register_screen.dart';
-import 'presentation/views/plot_input/plot_input_screen.dart';
-import 'presentation/views/layout/layout_display_screen.dart';
-import 'presentation/views/interior/interior_screen.dart';
-import 'presentation/views/materials/materials_screen.dart';
-import 'presentation/views/cost/cost_screen.dart';
-import 'presentation/views/export/export_screen.dart';
-import 'presentation/views/chatbot/chatbot_screen.dart';
-import 'presentation/views/profile/profile_screen.dart';
-import 'core/constants/color_constants.dart';
+import 'presentation/viewmodels/interior_viewmodel.dart';
+import 'presentation/viewmodels/layout_viewmodel.dart';
+import 'presentation/viewmodels/material_viewmodel.dart';
+import 'presentation/viewmodels/plot_input_viewmodel.dart';
+import 'presentation/viewmodels/prices_viewmodel.dart';
+import 'presentation/viewmodels/profile_viewmodel.dart';
+import 'presentation/viewmodels/projects_viewmodel.dart';
+import 'presentation/views/auth/auth_gate.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  runApp(const DomexaApp());
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  final settings = await SettingsService.load();
+  runApp(DomexaApp(settings: settings));
 }
 
 class DomexaApp extends StatelessWidget {
-  const DomexaApp({super.key});
+  const DomexaApp({super.key, required this.settings});
+  final SettingsService settings;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthViewModel()),
+        // Services (Model layer)
+        Provider<SettingsService>.value(value: settings),
+        Provider<ApiService>(create: (c) => ApiService(c.read<SettingsService>())),
+        Provider<FirebaseService>(create: (_) => FirebaseService()),
+        // ViewModels
+        ChangeNotifierProvider(create: (c) => AuthViewModel(c.read<FirebaseService>())),
+        ChangeNotifierProxyProvider<AuthViewModel, ProjectsViewModel>(
+          create: (c) => ProjectsViewModel(c.read<FirebaseService>()),
+          update: (_, auth, vm) => vm!..bind(auth.user?.uid),
+        ),
         ChangeNotifierProvider(create: (_) => PlotInputViewModel()),
-        ChangeNotifierProvider(create: (_) => InteriorViewModel()),
-        ChangeNotifierProvider(create: (_) => CostViewModel()),
-        ChangeNotifierProvider(create: (_) => ExportViewModel()),
-        ChangeNotifierProvider(create: (_) => ChatbotViewModel()),
+        ChangeNotifierProvider(create: (c) => LayoutViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => MaterialViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => CostViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => InteriorViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => ChatbotViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => ExportViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => PricesViewModel(c.read<ApiService>())),
+        ChangeNotifierProvider(create: (c) => ProfileViewModel(c.read<SettingsService>(), c.read<ApiService>())),
       ],
       child: MaterialApp(
-        title: 'Domexa - Build Your Dream Home',
+        title: 'Domexa',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          primaryColor: AppColors.primary,
-          scaffoldBackgroundColor: AppColors.background,
-          useMaterial3: true,
-          appBarTheme: const AppBarTheme(
-            backgroundColor: AppColors.surface,
-            elevation: 0,
-            centerTitle: false,
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: AppColors.bgInput,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-        initialRoute: '/',
-        routes: {
-          '/': (context) => const SplashScreen(),
-          '/home': (context) => const HomeScreen(),
-          '/login': (context) => const LoginScreen(),
-          '/register': (context) => const RegisterScreen(),
-          '/plot-input': (context) => const PlotInputScreen(),
-          '/layout': (context) => LayoutDisplayScreen(),
-          '/interior': (context) => const InteriorScreen(),
-          '/materials': (context) => const MaterialsScreen(),
-          '/cost': (context) => const CostScreen(),
-          '/export': (context) => const ExportScreen(),
-          '/chatbot': (context) => const ChatbotScreen(),
-          '/profile': (context) => const ProfileScreen(),
-        },
+        theme: AppTheme.light(),
+        home: const AuthGate(),
       ),
     );
   }

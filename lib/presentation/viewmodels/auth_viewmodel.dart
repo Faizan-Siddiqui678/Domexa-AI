@@ -1,136 +1,76 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import '../../data/services/firebase_service.dart';
 
 class AuthViewModel extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  User? _user;
-  bool _isLoading = false;
-  String? _errorMessage;
-  String? _displayName;
-
-  User? get user => _user;
-  bool get isLoading => _isLoading;
-  String? get errorMessage => _errorMessage;
-  bool get isLoggedIn => _user != null;
-  String get userEmail => _user?.email ?? '';
-  String get userName => _displayName ?? _user?.displayName ?? 'User';
-
-  AuthViewModel() {
-    _auth.authStateChanges().listen((user) {
-      _user = user;
-      if (user != null) _loadUserProfile();
+  AuthViewModel(this._fb) {
+    _sub = _fb.authChanges.listen((u) {
+      _user = u;
+      _ready = true;
+      if (u != null) _guest = false;
       notifyListeners();
     });
   }
+  final FirebaseService _fb;
+  StreamSubscription<User?>? _sub;
+  User? _user;
+  bool _ready = false, _guest = false, _busy = false;
+  String? _error, _info;
 
-  Future<void> _loadUserProfile() async {
-    if (_user == null) return;
-    try {
-      final doc = await _firestore.collection('users').doc(_user!.uid).get();
-      if (doc.exists) {
-        final data = doc.data();
-        _displayName = data?['name'] as String?;
-        notifyListeners();
-      }
-    } catch (e) {
-      // Handle error silently
-    }
-  }
+  User? get user => _user;
+  bool get ready => _ready;
+  bool get isGuest => _guest && _user == null;
+  bool get isSignedIn => _user != null;
+  bool get canEnter => isSignedIn || _guest;
+  bool get busy => _busy;
+  String? get error => _error;
+  String? get info => _info;
+  String get displayName => (_user?.displayName?.trim().isNotEmpty ?? false) ? _user!.displayName! : (_user?.email ?? 'Guest');
 
-  Future<bool> signIn(String email, String password) async {
-    _isLoading = true;
-    _errorMessage = null;
+  void clearMessages() {
+    _error = null;
+    _info = null;
     notifyListeners();
-
-    try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-      _isLoading = false;
-      notifyListeners();
-      return true;
-    } on FirebaseAuthException catch (e) {
-      _isLoading = false;
-      _errorMessage = _getFriendlyErrorMessage(e.code);
-      notifyListeners();
-      return false;
-    } catch (e) {
-      _isLoading = false;
-      _errorMessage = 'Connection error. Please check your internet.';
-      notifyListeners();
-      return false;
-    }
   }
 
-  Future<bool> register(String name, String email, String password) async {
-    _isLoading = true;
-    _errorMessage = null;
+  void continueAsGuest() {
+    _guest = true;
     notifyListeners();
+  }
 
+  Future<bool> _do(Future<void> Function() f, {String? okInfo}) async {
+    _busy = true;
+    _error = null;
+    _info = null;
+    notifyListeners();
     try {
-      final UserCredential credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      await credential.user?.updateDisplayName(name);
-
-      await _firestore.collection('users').doc(credential.user!.uid).set({
-        'name': name,
-        'email': email,
-        'createdAt': FieldValue.serverTimestamp(),
-        'projects': [],
-        'savedDesigns': [],
-      });
-
-      _displayName = name;
-      _isLoading = false;
-      notifyListeners();
+      await f();
+      _info = okInfo;
       return true;
-    } on FirebaseAuthException catch (e) {
-      _isLoading = false;
-      _errorMessage = _getFriendlyErrorMessage(e.code);
-      notifyListeners();
-      return false;
     } catch (e) {
-      _isLoading = false;
-      _errorMessage = 'Registration failed. Please try again.';
-      notifyListeners();
+      _error = FirebaseService.friendlyError(e);
       return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
     }
   }
+
+  Future<bool> signIn(String email, String pw) => _do(() => _fb.signIn(email, pw));
+  Future<bool> register(String name, String email, String pw) => _do(() => _fb.register(name, email, pw));
+  Future<bool> resetPassword(String email) =>
+      _do(() => _fb.sendReset(email), okInfo: 'Reset link sent. Check your email inbox (and spam folder).');
 
   Future<void> signOut() async {
-    await _auth.signOut();
-    _user = null;
-    _displayName = null;
+    await _fb.signOut();
+    _guest = false;
     notifyListeners();
   }
 
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  String _getFriendlyErrorMessage(String code) {
-    switch (code) {
-      case 'user-not-found':
-        return 'No account found with this email address.';
-      case 'wrong-password':
-        return 'Incorrect password. Please try again.';
-      case 'email-already-in-use':
-        return 'An account already exists with this email.';
-      case 'weak-password':
-        return 'Password must be at least 6 characters.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please try again later.';
-      case 'network-request-failed':
-        return 'No internet connection. Please check your network.';
-      default:
-        return 'Authentication failed. Please try again.';
-    }
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
   }
 }

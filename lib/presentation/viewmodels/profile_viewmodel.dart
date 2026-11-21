@@ -1,80 +1,35 @@
-import 'package:flutter/material.dart';
-import '../../data/services/firebase_service.dart';
-import '../../data/models/user_model.dart';
-import '../../data/models/project_model.dart';
+import '../../data/services/api_service.dart';
+import '../../data/services/settings_service.dart';
+import 'base_viewmodel.dart';
 
-class ProfileViewModel extends ChangeNotifier {
-  final FirebaseService _firebaseService;
-  ProfileViewModel({FirebaseService? firebaseService})
-      : _firebaseService = firebaseService ?? FirebaseService();
+/// Server address + connection test (uses GET /health).
+class ProfileViewModel extends BaseViewModel {
+  ProfileViewModel(this._settings, this._api);
+  final SettingsService _settings;
+  final ApiService _api;
 
-  UserModel? _user;
-  List<ProjectModel> _projects = [];
-  bool _isLoading = false;
-  bool _isSaving = false;
-  String? _errorMessage;
-  String? _successMessage;
+  Map<String, dynamic>? health;
 
-  UserModel?          get user           => _user;
-  List<ProjectModel>  get projects       => _projects;
-  bool                get isLoading      => _isLoading;
-  bool                get isSaving       => _isSaving;
-  String?             get errorMessage   => _errorMessage;
-  String?             get successMessage => _successMessage;
+  String get baseUrl => _settings.baseUrl;
 
-  Future<void> loadProfile() async {
-    _isLoading = true;
-    _errorMessage = null;
+  Future<void> saveServer(String url) async {
+    await _settings.setBaseUrl(url);
+    health = null;
     notifyListeners();
-    try {
-      _user     = await _firebaseService.getUserProfile();
-      _projects = await _firebaseService.getUserProjects();
-    } catch (e) {
-      _errorMessage = 'Failed to load profile: $e';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
   }
 
-  Future<bool> updateProfile({
-    required String displayName,
-    required String phone,
-  }) async {
-    _isSaving = true;
-    _errorMessage = null;
-    _successMessage = null;
-    notifyListeners();
-    try {
-      await _firebaseService.updateUserProfile(
-          displayName: displayName, phone: phone);
-      _user = _user?.copyWith(displayName: displayName, phone: phone);
-      _successMessage = 'Profile updated successfully!';
-      _isSaving = false;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _isSaving = false;
-      _errorMessage = 'Update failed: $e';
-      notifyListeners();
-      return false;
-    }
-  }
+  Future<void> testConnection() => run(() => _api.health(), (h) => health = h);
 
-  Future<void> deleteProject(String projectId) async {
-    try {
-      await _firebaseService.deleteProject(projectId);
-      _projects.removeWhere((p) => p.id == projectId);
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Delete failed: $e';
-      notifyListeners();
-    }
-  }
-
-  void clearMessages() {
-    _errorMessage = null;
-    _successMessage = null;
-    notifyListeners();
+  /// Friendly summary lines from /health.
+  List<(String, bool)> get healthLines {
+    final h = health;
+    if (h == null) return [];
+    final ai = (h['ai_chatbot'] is Map ? h['ai_chatbot']['status'] : '')?.toString() ?? '';
+    final img = h['image_generation'] is Map && h['image_generation']['hugging_face_token_present'] == true;
+    return [
+      ('Server is running (v${h['version'] ?? '?'})', true),
+      (ai == 'gemini_active' ? 'AI assistant is active' : 'AI assistant is in basic mode (no Gemini key on server)', ai == 'gemini_active'),
+      (img ? 'Room image generation is available' : 'Room image generation is not configured on the server', img),
+    ];
   }
 }

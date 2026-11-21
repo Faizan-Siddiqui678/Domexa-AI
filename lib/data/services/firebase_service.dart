@@ -1,129 +1,54 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/project_model.dart';
-import '../models/user_model.dart';
-
-/// Firebase Service
-/// Handles all Firestore database operations for projects and user data
 
 class FirebaseService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  String? get _uid => _auth.currentUser?.uid;
+  Stream<User?> get authChanges => _auth.authStateChanges();
+  User? get currentUser => _auth.currentUser;
 
-  /// Get current user profile
-  Future<UserModel?> getUserProfile() async {
-    if (_uid == null) return null;
-    try {
-      final doc = await _db.collection('users').doc(_uid).get();
-      if (doc.exists) {
-        return UserModel.fromJson(doc.data() ?? {});
+  Future<void> signIn(String email, String password) =>
+      _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+
+  Future<void> register(String name, String email, String password) async {
+    final c = await _auth.createUserWithEmailAndPassword(email: email.trim(), password: password);
+    await c.user?.updateDisplayName(name.trim());
+  }
+
+  Future<void> sendReset(String email) => _auth.sendPasswordResetEmail(email: email.trim());
+  Future<void> signOut() => _auth.signOut();
+
+  CollectionReference<Map<String, dynamic>> _projects(String uid) =>
+      _db.collection('users').doc(uid).collection('projects');
+
+  Stream<List<ProjectModel>> watchProjects(String uid) => _projects(uid)
+      .orderBy('created_at', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map((d) => ProjectModel.fromMap(d.id, d.data())).toList());
+
+  Future<void> saveProject(String uid, ProjectModel p) => _projects(uid).doc(p.id).set(p.toMap());
+  Future<void> deleteProject(String uid, String id) => _projects(uid).doc(id).delete();
+
+  /// Plain-language messages (heuristic: help users recognise and recover from errors).
+  static String friendlyError(Object e) {
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'invalid-email': return 'That email address does not look right.';
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential': return 'Email or password is incorrect. You can reset your password below.';
+        case 'email-already-in-use': return 'An account with this email already exists. Try signing in instead.';
+        case 'weak-password': return 'Choose a stronger password (at least 6 characters).';
+        case 'network-request-failed': return 'No internet connection. Check your network and try again.';
+        case 'too-many-requests': return 'Too many attempts. Please wait a few minutes and try again.';
+        case 'user-disabled': return 'This account has been disabled.';
       }
-      return null;
-    } catch (e) {
-      return null;
     }
-  }
-
-  /// Get user projects
-  Future<List<ProjectModel>> getUserProjects() async {
-    if (_uid == null) return [];
-    try {
-      final snap = await _db
-          .collection('users')
-          .doc(_uid)
-          .collection('projects')
-          .orderBy('created_at', descending: true)
-          .get();
-      return snap.docs
-          .map((d) => ProjectModel.fromJson(d.data()))
-          .toList();
-    } catch (e) {
-      return [];
+    if (e is FirebaseException && e.code == 'permission-denied') {
+      return 'You do not have permission to do that. Please sign in again.';
     }
-  }
-
-  /// Save a project to Firestore
-  Future<void> saveProject(ProjectModel project) async {
-    if (_uid == null) return;
-    try {
-      await _db
-          .collection('users')
-          .doc(_uid)
-          .collection('projects')
-          .doc(project.projectId)
-          .set(project.toJson());
-    } catch (e) {
-      throw Exception('Failed to save project: $e');
-    }
-  }
-
-  /// Get all projects for current user
-  Future<List<ProjectModel>> getProjects() async {
-    if (_uid == null) return [];
-    try {
-      final snap = await _db
-          .collection('users')
-          .doc(_uid)
-          .collection('projects')
-          .orderBy('created_at', descending: true)
-          .get();
-      return snap.docs
-          .map((d) => ProjectModel.fromJson(d.data()))
-          .toList();
-    } catch (e) {
-      return [];
-    }
-  }
-
-  /// Delete a project
-  Future<void> deleteProject(String projectId) async {
-    if (_uid == null) return;
-    await _db
-        .collection('users')
-        .doc(_uid)
-        .collection('projects')
-        .doc(projectId)
-        .delete();
-  }
-
-  /// Update user profile (single method with named parameters)
-  Future<void> updateUserProfile({
-    String? displayName,
-    String? phone,
-    String? location,
-    String? profilePicture,
-  }) async {
-    if (_uid == null) return;
-    final Map<String, dynamic> data = {};
-    if (displayName != null) data['display_name'] = displayName;
-    if (phone != null) data['phone'] = phone;
-    if (location != null) data['location'] = location;
-    if (profilePicture != null) data['profile_picture'] = profilePicture;
-
-    if (data.isNotEmpty) {
-      await _db.collection('users').doc(_uid).update(data);
-    }
-  }
-
-  /// Update user profile (legacy method with Map parameter)
-  Future<void> updateUserProfileMap(Map<String, dynamic> data) async {
-    if (_uid == null) return;
-    await _db.collection('users').doc(_uid).update(data);
-  }
-
-  /// Stream of user's projects (real-time)
-  Stream<List<ProjectModel>> projectsStream() {
-    if (_uid == null) return const Stream.empty();
-    return _db
-        .collection('users')
-        .doc(_uid)
-        .collection('projects')
-        .orderBy('created_at', descending: true)
-        .snapshots()
-        .map((snap) => snap.docs
-        .map((d) => ProjectModel.fromJson(d.data()))
-        .toList());
+    return 'Something went wrong. Please try again.';
   }
 }

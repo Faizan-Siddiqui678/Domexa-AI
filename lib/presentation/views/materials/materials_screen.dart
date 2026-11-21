@@ -1,183 +1,139 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/constants/color_constants.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../data/models/material_model.dart';
+import '../../viewmodels/material_viewmodel.dart';
 import '../../viewmodels/plot_input_viewmodel.dart';
+import '../../widgets/common_widgets.dart';
+import '../cost/cost_screen.dart';
 
 class MaterialsScreen extends StatelessWidget {
   const MaterialsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<PlotInputViewModel>();
+    final vm = context.watch<MaterialViewModel>();
+    // load() de-duplicates identical inputs, so this only fetches when something changed.
+    if (!vm.isLoading && !vm.hasError) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) context.read<MaterialViewModel>().load(p.plot, p.budget, p.city);
+      });
+    }
+    final r = vm.result;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primarySurface,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.arrow_back, color: AppColors.primary, size: 20),
-          ),
-        ),
-        title: const Text(
-          'Material Guide',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
-      body: Consumer<PlotInputViewModel>(
-        builder: (context, vm, child) {
-          final plotArea = vm.plotArea;
-          final numFloors = vm.numFloors;
-          final builtArea = plotArea * 0.7 * numFloors;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildInfoCard(plotArea, numFloors, builtArea),
-                const SizedBox(height: 20),
-                _buildMaterialTable(builtArea),
-                const SizedBox(height: 20),
-                _buildTipsCard(),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildInfoCard(double plotArea, int numFloors, double builtArea) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: AppBar(title: const Text('Material guide')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'Project Summary',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-          ),
-          const SizedBox(height: 12),
-          _infoRow('Plot Area', '${plotArea.toInt()} sqft (${(plotArea / 225).toStringAsFixed(1)} Marla)'),
-          _infoRow('Number of Floors', '$numFloors'),
-          _infoRow('Built Area', '${builtArea.toInt()} sqft'),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-          Text(value, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMaterialTable(double builtArea) {
-    final List<Map<String, dynamic>> materials = [
-      {'name': '🧱 Cement', 'unit': 'bags', 'quantity': (builtArea * 0.45).toInt()},
-      {'name': '⚙️ Steel', 'unit': 'kg', 'quantity': (builtArea * 3.5).toInt()},
-      {'name': '🧱 Bricks', 'unit': 'pieces', 'quantity': (builtArea * 22.5).toInt()},
-      {'name': '🏖️ Sand', 'unit': 'cft', 'quantity': (builtArea * 0.8).toInt()},
-      {'name': '🪨 Crush', 'unit': 'cft', 'quantity': (builtArea * 0.6).toInt()},
-      {'name': '🪨 Floor Tiles', 'unit': 'sqft', 'quantity': (builtArea * 1.1).toInt()},
-      {'name': '🎨 Paint', 'unit': 'gallons', 'quantity': (builtArea * 0.03).toInt()},
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'Estimated Material Quantities',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-            ),
-          ),
-          const Divider(height: 0, color: AppColors.border),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: materials.length,
-            separatorBuilder: (_, __) => const Divider(height: 0, color: AppColors.border),
-            itemBuilder: (context, index) {
-              final material = materials[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(material['name'] as String, style: const TextStyle(color: AppColors.textPrimary)),
-                    Text(
-                      '${material['quantity']} ${material['unit']}',
-                      style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTipsCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.infoLight,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.lightbulb_outlined, color: AppColors.info, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Material Tips',
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.info),
+          const ProjectSummaryBar(),
+          SectionCard(
+            title: 'Options',
+            icon: Icons.tune,
+            child: Column(children: [
+              BudgetSelector(
+                value: p.budget,
+                onChanged: (b) {
+                  p.setBudget(b);
+                  context.read<MaterialViewModel>().load(p.plot, b, p.city, force: true);
+                },
               ),
-            ],
+              const SizedBox(height: 12),
+              CityDropdown(
+                value: p.city,
+                onChanged: (c) {
+                  p.setCity(c);
+                  context.read<MaterialViewModel>().load(p.plot, p.budget, c, force: true);
+                },
+              ),
+            ]),
           ),
-          const SizedBox(height: 10),
-          const Text('• Add 10-15% extra for wastage and breakage', style: TextStyle(fontSize: 12)),
-          const Text('• Buy PSQCA certified materials only', style: TextStyle(fontSize: 12)),
-          const Text('• Prices vary by city and season', style: TextStyle(fontSize: 12)),
-          const Text('• Get multiple quotes before purchasing', style: TextStyle(fontSize: 12)),
+          if (vm.isLoading && r != null) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+          if (vm.hasError)
+            InfoNote(vm.errorMessage ?? 'Could not load materials.', tone: NoteTone.error, title: 'Could not update'),
+          if (r == null && vm.isLoading)
+            SizedBox(
+              height: 300,
+              child: LoadingPanel(
+                messages: const ["Fetching today's market prices...", 'Calculating quantities...', 'Choosing brands for your budget...'],
+                hint: 'usually 5-20 s',
+                onCancel: vm.cancel,
+              ),
+            ),
+          if (r == null && vm.hasError)
+            ErrorPanel(message: vm.errorMessage ?? 'Could not load materials.', onRetry: () => vm.load(p.plot, p.budget, p.city, force: true)),
+          if (r != null) ..._content(context, r, p),
         ],
       ),
     );
   }
+
+  List<Widget> _content(BuildContext context, MaterialResult r, PlotInputViewModel p) {
+    final rates = r.rates;
+    return [
+      Container(
+        padding: const EdgeInsets.all(18),
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(18)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(r.budgetLabel, style: const TextStyle(color: Colors.white70)),
+          Text(Fmt.pkr(r.total), style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800)),
+          const Text('estimated cost of all materials', style: TextStyle(color: Colors.white70)),
+        ]),
+      ),
+      if (rates != null)
+        InfoNote(
+          'Cement PKR ${Fmt.number(rates.cement)}/bag  -  Steel PKR ${Fmt.number(rates.steel)}/kg  -  Bricks PKR ${Fmt.number(rates.brick)} each. '
+              '${rates.isFallback ? 'Live prices were unavailable, so saved reference prices were used.' : 'Source: ${rates.source}${rates.scrapedAt.isNotEmpty ? ', updated ${Fmt.when(rates.scrapedAt)}' : ''}.'}',
+          tone: rates.isFallback ? NoteTone.warning : NoteTone.success,
+          title: rates.isFallback ? 'Reference prices' : 'Live market prices',
+        ),
+      SectionCard(
+        title: 'Cost by group',
+        icon: Icons.pie_chart_outline,
+        child: Column(children: [
+          for (final e in r.summary.entries) KeyValueRow(Fmt.title(e.key.replaceAll('_cost', '')), Fmt.pkr(e.value)),
+        ]),
+      ),
+      for (final entry in r.byCategory.entries)
+        SectionCard(
+          title: entry.key,
+          subtitle: Fmt.pkr(entry.value.fold<double>(0, (s, i) => s + i.totalPrice)),
+          child: Column(children: [
+            for (var i = 0; i < entry.value.length; i++) ...[
+              if (i > 0) const Divider(height: 20),
+              _ItemRow(item: entry.value[i]),
+            ],
+          ]),
+        ),
+      if (r.climateAdvice.trim().isNotEmpty) InfoNote(r.climateAdvice.trim(), title: 'Climate advice for Pakistan'),
+      const InfoNote('Add 10-15% extra for wastage and breakage. Buy PSQCA-certified materials and compare at least three quotes.', tone: NoteTone.warning, title: 'Buying tips'),
+      Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 24),
+        child: FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CostScreen())),
+          icon: const Icon(Icons.calculate_outlined),
+          label: const Text('See full cost estimate'),
+        ),
+      ),
+    ];
+  }
+}
+
+class _ItemRow extends StatelessWidget {
+  const _ItemRow({required this.item});
+  final MaterialItem item;
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700))),
+      Text(Fmt.pkr(item.totalPrice), style: const TextStyle(fontWeight: FontWeight.w800)),
+    ]),
+    const SizedBox(height: 2),
+    Text('${Fmt.number(item.quantity)} ${item.unit}  x  PKR ${Fmt.number(item.unitPrice)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+    if (item.brand.isNotEmpty) Text('Brand: ${item.brand}', style: Theme.of(context).textTheme.bodySmall),
+    if (item.note.isNotEmpty) Text(item.note, style: Theme.of(context).textTheme.bodySmall),
+  ]);
 }

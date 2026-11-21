@@ -1,360 +1,178 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../../../core/constants/color_constants.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../data/models/plot_input_model.dart';
 import '../../viewmodels/plot_input_viewmodel.dart';
+import '../../widgets/common_widgets.dart';
+import '../layout/layout_display_screen.dart';
 
+/// [editOnly] = opened from "Edit" on another screen: just changes the project and returns.
 class PlotInputScreen extends StatefulWidget {
-  const PlotInputScreen({super.key});
-
+  const PlotInputScreen({super.key, this.editOnly = false});
+  final bool editOnly;
   @override
   State<PlotInputScreen> createState() => _PlotInputScreenState();
 }
 
 class _PlotInputScreenState extends State<PlotInputScreen> {
+  final _form = GlobalKey<FormState>();
+  late final TextEditingController _area;
+
+  @override
+  void initState() {
+    super.initState();
+    _area = TextEditingController(text: context.read<PlotInputViewModel>().plot.plotArea.round().toString());
+  }
+
+  @override
+  void dispose() {
+    _area.dispose();
+    super.dispose();
+  }
+
+  void _syncArea(double v) => _area.text = v.round().toString();
+
+  Future<void> _reset() async {
+    final vm = context.read<PlotInputViewModel>();
+    final prev = vm.toProject();
+    final messenger = ScaffoldMessenger.of(context);
+    vm.reset();
+    _syncArea(vm.plot.plotArea);
+    messenger.showSnackBar(SnackBar(
+      content: const Text('Reset to defaults'),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () {
+          vm.load(prev);
+          _syncArea(prev.plot.plotArea);
+        },
+      ),
+    ));
+  }
+
+  void _continue() {
+    if (!(_form.currentState?.validate() ?? false)) return;
+    if (widget.editOnly) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LayoutDisplayScreen()));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final vm = Provider.of<PlotInputViewModel>(context);
+    final vm = context.watch<PlotInputViewModel>();
+    final p = vm.plot;
+    final styleOptions = {for (final s in AppConstants.styles) s: Fmt.title(s)};
 
     return Scaffold(
-      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primarySurface,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.arrow_back, color: AppColors.primary, size: 20),
-          ),
-        ),
-        title: const Text(
-          'Design Your Home',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+        title: Text(widget.editOnly ? 'Project details' : 'Design your home'),
+        actions: [TextButton(onPressed: _reset, child: const Text('Reset'))],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton.icon(
+            onPressed: p.isValid ? _continue : null,
+            icon: Icon(widget.editOnly ? Icons.check : Icons.auto_awesome),
+            label: Text(widget.editOnly ? 'Done' : 'Generate layout'),
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: Form(
+        key: _form,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            _buildPlotSection(vm),
-            const SizedBox(height: 20),
-            _buildStructureSection(vm),
-            const SizedBox(height: 20),
-            _buildStyleSection(vm),
-            const SizedBox(height: 20),
-            _buildAdditionalRoomsSection(vm),
-            const SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: vm.isLoading ? null : () => _generateLayout(vm),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            for (final w in p.warnings) InfoNote(w, tone: NoteTone.warning),
+
+            SectionCard(
+              title: 'Plot size',
+              icon: Icons.crop_square,
+              subtitle: 'Pick a common size or type your own.',
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final pr in AppConstants.plotPresets)
+                    ChoiceChip(
+                      label: Text(pr.label),
+                      selected: p.plotArea == pr.sqft,
+                      onSelected: (_) {
+                        _syncArea(pr.sqft);
+                        vm.setPlotArea(pr.sqft);
+                      },
+                    ),
+                ]),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _area,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  decoration: InputDecoration(
+                    labelText: 'Plot area',
+                    suffixText: 'sqft',
+                    helperText: '= ${Fmt.marla(p.plotArea)} Marla  -  about ${Fmt.sqft(p.builtArea)} built across ${p.numFloors} floor${p.numFloors > 1 ? 's' : ''}',
                   ),
+                  validator: (v) => Validators.number(v, AppConstants.minPlotArea, AppConstants.maxPlotArea, 'Plot area', 'sqft'),
+                  onChanged: (v) {
+                    final n = double.tryParse(v);
+                    if (n != null && n >= AppConstants.minPlotArea && n <= AppConstants.maxPlotArea) vm.setPlotArea(n);
+                  },
                 ),
-                child: vm.isLoading
-                    ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-                    : const Text(
-                  'Generate Layout',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+              ]),
             ),
-            if (vm.errorMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+
+            SectionCard(
+              title: 'Structure',
+              icon: Icons.apartment,
+              child: Column(children: [
+                StepperField(label: 'Floors', value: p.numFloors, min: AppConstants.minFloors, max: AppConstants.maxFloors, onChanged: vm.setFloors),
+                const Divider(height: 18),
+                StepperField(label: 'Bedrooms', value: p.bedrooms, min: AppConstants.minBedrooms, max: AppConstants.maxBedrooms, onChanged: vm.setBedrooms),
+                const Divider(height: 18),
+                StepperField(label: 'Bathrooms', value: p.bathrooms, min: AppConstants.minBathrooms, max: AppConstants.maxBathrooms, onChanged: vm.setBathrooms),
+                const Divider(height: 18),
+                StepperField(label: 'Kitchens', value: p.kitchen, min: AppConstants.minKitchens, max: AppConstants.maxKitchens, onChanged: vm.setKitchens),
+              ]),
+            ),
+
+            SectionCard(
+              title: 'Design style',
+              icon: Icons.palette_outlined,
+              child: OptionChips(options: styleOptions, selected: p.houseStyle, onSelected: vm.setStyle),
+            ),
+
+            SectionCard(
+              title: 'Additional rooms',
+              icon: Icons.add_circle_outline,
+              child: Column(children: [
+                for (final e in kExtraRooms)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(e.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(e.hint),
+                    value: p.extra(e.key),
+                    onChanged: (v) => vm.setExtra(e.key, v),
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          vm.errorMessage!,
-                          style: const TextStyle(color: Colors.red, fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              ]),
+            ),
+
+            SectionCard(
+              title: 'Location and budget',
+              icon: Icons.location_on_outlined,
+              subtitle: 'Used for live prices in Materials, Cost and the PDF report.',
+              child: Column(children: [
+                CityDropdown(value: vm.city, onChanged: vm.setCity),
+                const SizedBox(height: 14),
+                BudgetSelector(value: vm.budget, onChanged: vm.setBudget),
+              ]),
+            ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildPlotSection(PlotInputViewModel vm) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.crop_free, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Plot Information',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Plot Area (sqft)', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${vm.plotArea.toInt()} sqft',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    Text(
-                      '≈ ${vm.plotMarla.toStringAsFixed(1)} Marla',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Built Area', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${vm.builtArea.toInt()} sqft',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    Text(
-                      '≈ ${(vm.builtArea / 225).toStringAsFixed(1)} Marla built',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            children: vm.marlaPresets.keys.map((preset) {
-              return FilterChip(
-                label: Text(preset),
-                selected: vm.selectedPreset == preset,
-                onSelected: (_) => vm.setSelectedPreset(preset),
-                backgroundColor: AppColors.bgInput,
-                selectedColor: AppColors.primary,
-                labelStyle: TextStyle(
-                  color: vm.selectedPreset == preset ? Colors.white : AppColors.textPrimary,
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          Slider(
-            value: vm.plotArea,
-            min: 500,
-            max: 10000,
-            divisions: 19,
-            label: '${vm.plotArea.toInt()} sqft',
-            onChanged: vm.setPlotArea,
-            activeColor: AppColors.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStructureSection(PlotInputViewModel vm) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.apartment, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Structure',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildSlider('Floors', vm.numFloors, 1, 4, vm.setNumFloors),
-          _buildSlider('Bedrooms', vm.bedrooms, 1, 8, vm.setBedrooms),
-          _buildSlider('Bathrooms', vm.bathrooms, 1, 6, vm.setBathrooms),
-          _buildSlider('Kitchens', vm.kitchen, 1, 2, vm.setKitchen),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSlider(String label, int value, int min, int max, Function(int) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-              Text(
-                value.toString(),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-          Slider(
-            value: value.toDouble(),
-            min: min.toDouble(),
-            max: max.toDouble(),
-            divisions: max - min,
-            onChanged: (v) => onChanged(v.toInt()),
-            activeColor: AppColors.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStyleSection(PlotInputViewModel vm) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.palette, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Design Style',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            children: vm.availableStyles.map((style) {
-              return ChoiceChip(
-                label: Text(style.toUpperCase()),
-                selected: vm.houseStyle == style,
-                onSelected: (_) => vm.setHouseStyle(style),
-                selectedColor: AppColors.primary,
-                backgroundColor: AppColors.bgInput,
-                labelStyle: TextStyle(
-                  color: vm.houseStyle == style ? Colors.white : AppColors.textPrimary,
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAdditionalRoomsSection(PlotInputViewModel vm) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.add_circle_outline, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Additional Rooms',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _buildSwitchTile('Drawing Room', vm.hasDrawingRoom, vm.setDrawingRoom),
-          _buildSwitchTile('Dining Room', vm.hasDiningRoom, vm.setDiningRoom),
-          _buildSwitchTile('Garage', vm.hasGarage, vm.setGarage),
-          _buildSwitchTile('Basement', vm.hasBasement, vm.setBasement),
-          _buildSwitchTile('Gallery/Corridor', vm.hasGallery, vm.setGallery),
-          _buildSwitchTile('Open Area/Terrace', vm.hasOpenArea, vm.setOpenArea),
-          _buildSwitchTile('Servant Quarter', vm.hasServantQuarter, vm.setServantQuarter),
-          _buildSwitchTile('Store Room', vm.hasStoreRoom, vm.setStoreRoom),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSwitchTile(String title, bool value, Function(bool) onChanged) {
-    return SwitchListTile(
-      title: Text(title, style: const TextStyle(color: AppColors.textPrimary)),
-      value: value,
-      onChanged: onChanged,
-      activeColor: AppColors.primary,
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-    );
-  }
-
-  void _generateLayout(PlotInputViewModel vm) async {
-    FocusScope.of(context).unfocus();
-    await vm.generateLayout();
-    if (vm.generatedLayout != null && mounted) {
-      Navigator.pushReplacementNamed(context, '/layout');
-    }
   }
 }

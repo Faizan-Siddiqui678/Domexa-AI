@@ -1,162 +1,63 @@
-// lib/data/models/layout_model.dart
-// v5 — svg field + toJson() (project_model.dart needs it)
-
-class LayoutModel {
-  final double plotWidth;
-  final double plotLength;
-  final int totalFloors;
-  final double totalCoveredArea;
-  final double totalOpenArea;
-  final List<FloorModel> floors;
-  final List<String> recommendations;
-  final List<String> vastuNotes;
-
-  /// Lossless copy of the backend map — used by toJson() for saving projects.
-  final Map<String, dynamic> raw;
-
-  LayoutModel({
-    required this.plotWidth,
-    required this.plotLength,
-    required this.totalFloors,
-    required this.totalCoveredArea,
-    required this.totalOpenArea,
-    required this.floors,
-    required this.recommendations,
-    required this.vastuNotes,
-    this.raw = const {},
-  });
-
-  factory LayoutModel.fromJson(Map<String, dynamic> json) {
-    final data = json['data'] as Map<String, dynamic>? ?? json;
-    return LayoutModel(
-      plotWidth:         (data['plot_width']          as num?)?.toDouble() ?? 0,
-      plotLength:        (data['plot_length']         as num?)?.toDouble() ?? 0,
-      totalFloors:       (data['total_floors']        as int?) ?? 1,
-      totalCoveredArea:  (data['total_covered_area']  as num?)?.toDouble() ?? 0,
-      totalOpenArea:     (data['total_open_area']     as num?)?.toDouble() ?? 0,
-      floors: (data['floors'] as List? ?? [])
-          .map((f) => FloorModel.fromJson(f as Map<String, dynamic>))
-          .toList(),
-      recommendations: List<String>.from(data['recommendations'] ?? []),
-      vastuNotes:      List<String>.from(data['vastu_notes']     ?? []),
-      raw: Map<String, dynamic>.from(data),
-    );
-  }
-
-  Map<String, dynamic> toJson() => raw;
-
-  // Total rooms across all floors
-  int get totalRooms =>
-      floors.fold(0, (sum, f) => sum + f.rooms.length);
-}
-
-
-class FloorModel {
-  final int floorNumber;
-  final String floorName;
-  final List<RoomModel> rooms;
-
-  /// ← AutoCAD-style SVG string from backend renderer
-  /// Flutter renders this directly with flutter_svg
-  final String svg;
-
-  /// Per-floor breakdown for UI card
-  final Map<String, dynamic>? floorRequirements;
-
-  FloorModel({
-    required this.floorNumber,
-    required this.floorName,
-    required this.rooms,
-    required this.svg,
-    this.floorRequirements,
-  });
-
-  factory FloorModel.fromJson(Map<String, dynamic> json) {
-    return FloorModel(
-      floorNumber:       json['floor_number']       as int?    ?? 0,
-      floorName:         json['floor_name']          as String? ?? 'Floor',
-      svg:               json['svg']                 as String? ?? '',
-      floorRequirements: json['floor_requirements']  as Map<String, dynamic>?,
-      rooms: (json['rooms'] as List? ?? [])
-          .map((r) => RoomModel.fromJson(r as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-
-  double get totalArea =>
-      rooms.fold(0.0, (sum, r) => sum + r.areaSqft);
-
-  String get roomSummary =>
-      rooms.map((r) => r.roomName).take(4).join(', ') +
-          (rooms.length > 4 ? '...' : '');
-}
-
+import '../../core/utils/json_utils.dart';
 
 class RoomModel {
-  final String roomId;
-  final String roomName;
-  final String roomType;
-  final double x;
-  final double y;
-  final double width;
-  final double length;
-  final double areaSqft;
-  final List<Map<String, dynamic>> doors;
-  final List<Map<String, dynamic>> windows;
-
-  RoomModel({
-    required this.roomId,
-    required this.roomName,
-    required this.roomType,
-    required this.x,
-    required this.y,
-    required this.width,
-    required this.length,
-    required this.areaSqft,
-    required this.doors,
-    required this.windows,
+  final String id, name, type;
+  final double x, y, width, length, areaSqft;
+  final int doors, windows;
+  const RoomModel({
+    required this.id, required this.name, required this.type, required this.x, required this.y,
+    required this.width, required this.length, required this.areaSqft,
+    required this.doors, required this.windows,
   });
+  factory RoomModel.fromJson(Map<String, dynamic> j) => RoomModel(
+    id: js(j['room_id']),
+    name: js(j['room_name'], 'Room'),
+    type: js(j['room_type']),
+    x: jd(j['x']), y: jd(j['y']),
+    width: jd(j['width']), length: jd(j['length']),
+    areaSqft: jd(j['area_sqft'], jd(j['width']) * jd(j['length'])),
+    doors: (j['doors'] is List) ? (j['doors'] as List).length : 0,
+    windows: (j['windows'] is List) ? (j['windows'] as List).length : 0,
+  );
+}
 
-  factory RoomModel.fromJson(Map<String, dynamic> json) {
-    return RoomModel(
-      roomId:   json['room_id']    as String? ?? '',
-      roomName: json['room_name']  as String? ?? '',
-      roomType: json['room_type']  as String? ?? '',
-      x:        (json['x']         as num?)?.toDouble() ?? 0,
-      y:        (json['y']         as num?)?.toDouble() ?? 0,
-      width:    (json['width']     as num?)?.toDouble() ?? 0,
-      length:   (json['length']    as num?)?.toDouble() ?? 0,
-      areaSqft: (json['area_sqft'] as num?)?.toDouble() ?? 0,
-      doors:   (json['doors']   as List? ?? [])
-          .map((d) => Map<String, dynamic>.from(d))
-          .toList(),
-      windows: (json['windows'] as List? ?? [])
-          .map((w) => Map<String, dynamic>.from(w))
-          .toList(),
+class FloorModel {
+  final int number;
+  final String name, svg;
+  final double area;
+  final List<RoomModel> rooms;
+  const FloorModel({required this.number, required this.name, required this.svg, required this.area, required this.rooms});
+  factory FloorModel.fromJson(Map<String, dynamic> j) => FloorModel(
+    number: ji(j['floor_number']),
+    name: js(j['floor_name'], 'Floor'),
+    svg: js(j['svg']),
+    area: jd(j['floor_area']),
+    rooms: jlist(j['rooms'], RoomModel.fromJson),
+  );
+}
+
+/// Parsed from LayoutResponse.layout_data
+class LayoutModel {
+  final double plotWidth, plotLength, coveredArea, openArea;
+  final int totalRooms;
+  final List<FloorModel> floors;
+  final List<String> recommendations, vastuNotes;
+  const LayoutModel({
+    required this.plotWidth, required this.plotLength, required this.coveredArea,
+    required this.openArea, required this.totalRooms, required this.floors,
+    required this.recommendations, required this.vastuNotes,
+  });
+  factory LayoutModel.fromResponse(Map<String, dynamic> json) {
+    final d = jmap(json['layout_data']);
+    return LayoutModel(
+      plotWidth: jd(d['plot_width']),
+      plotLength: jd(d['plot_length']),
+      coveredArea: jd(d['total_covered_area']),
+      openArea: jd(d['total_open_area']),
+      totalRooms: ji(d['total_rooms']),
+      floors: jlist(d['floors'], FloorModel.fromJson),
+      recommendations: jstrings(d['recommendations']),
+      vastuNotes: jstrings(d['vastu_notes']),
     );
-  }
-
-  // Human-readable size
-  String get sizeLabel =>
-      '${width.toStringAsFixed(0)}′ × ${length.toStringAsFixed(0)}′';
-
-  // Icon for room type
-  String get icon {
-    switch (roomType) {
-      case 'master_bedroom': return '🛏️';
-      case 'bedroom':        return '🛏️';
-      case 'kitchen':        return '🍳';
-      case 'bathroom':       return '🚿';
-      case 'living_room':    return '🛋️';
-      case 'drawing_room':   return '🪑';
-      case 'dining_room':    return '🍽️';
-      case 'garage':         return '🚗';
-      case 'stairs':         return '🪜';
-      case 'gallery':        return '🚶';
-      case 'open_area':      return '🌿';
-      case 'store_room':     return '📦';
-      case 'servant_quarter':return '🏠';
-      default:               return '🏠';
-    }
   }
 }
